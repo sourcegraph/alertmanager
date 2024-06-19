@@ -33,6 +33,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
@@ -64,9 +65,12 @@ import (
 var (
 	requestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "alertmanager_http_request_duration_seconds",
-			Help:    "Histogram of latencies for HTTP requests.",
-			Buckets: []float64{.05, 0.1, .25, .5, .75, 1, 2, 5, 20, 60},
+			Name:                            "alertmanager_http_request_duration_seconds",
+			Help:                            "Histogram of latencies for HTTP requests.",
+			Buckets:                         []float64{.05, 0.1, .25, .5, .75, 1, 2, 5, 20, 60},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"handler", "method"},
 	)
@@ -111,7 +115,7 @@ func init() {
 	prometheus.MustRegister(configuredReceivers)
 	prometheus.MustRegister(configuredIntegrations)
 	prometheus.MustRegister(configuredInhibitionRules)
-	prometheus.MustRegister(version.NewCollector("alertmanager"))
+	prometheus.MustRegister(collectors.NewBuildInfoCollector())
 }
 
 func instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
@@ -142,6 +146,8 @@ func run() int {
 		dataDir             = kingpin.Flag("storage.path", "Base path for data storage.").Default("data/").String()
 		retention           = kingpin.Flag("data.retention", "How long to keep data for.").Default("120h").Duration()
 		maintenanceInterval = kingpin.Flag("data.maintenance-interval", "Interval between garbage collection and snapshotting to disk of the silences and the notification logs.").Default("15m").Duration()
+		maxSilences         = kingpin.Flag("silences.max-silences", "Maximum number of silences, including expired silences. If negative or zero, no limit is set.").Default("0").Int()
+		maxPerSilenceBytes  = kingpin.Flag("silences.max-per-silence-bytes", "Maximum per silence size in bytes. If negative or zero, no limit is set.").Default("0").Int()
 		alertGCInterval     = kingpin.Flag("alerts.gc-interval", "Interval between alert GC.").Default("30m").Duration()
 
 		webConfig      = webflag.AddFlags(kingpin.CommandLine, ":9093")
@@ -255,8 +261,12 @@ func run() int {
 	silenceOpts := silence.Options{
 		SnapshotFile: filepath.Join(*dataDir, "silences"),
 		Retention:    *retention,
-		Logger:       log.With(logger, "component", "silences"),
-		Metrics:      prometheus.DefaultRegisterer,
+		Limits: silence.Limits{
+			MaxSilences:        *maxSilences,
+			MaxPerSilenceBytes: *maxPerSilenceBytes,
+		},
+		Logger:  log.With(logger, "component", "silences"),
+		Metrics: prometheus.DefaultRegisterer,
 	}
 
 	silences, err := silence.New(silenceOpts)
@@ -435,6 +445,7 @@ func run() int {
 			inhibitor,
 			silencer,
 			intervener,
+			marker,
 			notificationLog,
 			pipelinePeer,
 		)
