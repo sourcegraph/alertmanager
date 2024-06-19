@@ -312,13 +312,13 @@ type PagerdutyConfig struct {
 	Group          string            `yaml:"group,omitempty" json:"group,omitempty"`
 }
 
-// PagerdutyLink is a link
+// PagerdutyLink is a link.
 type PagerdutyLink struct {
 	Href string `yaml:"href,omitempty" json:"href,omitempty"`
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
 }
 
-// PagerdutyImage is an image
+// PagerdutyImage is an image.
 type PagerdutyImage struct {
 	Src  string `yaml:"src,omitempty" json:"src,omitempty"`
 	Alt  string `yaml:"alt,omitempty" json:"alt,omitempty"`
@@ -766,6 +766,7 @@ type TelegramConfig struct {
 	BotToken             Secret `yaml:"bot_token,omitempty" json:"token,omitempty"`
 	BotTokenFile         string `yaml:"bot_token_file,omitempty" json:"token_file,omitempty"`
 	ChatID               int64  `yaml:"chat_id,omitempty" json:"chat,omitempty"`
+	MessageThreadID      int    `yaml:"message_thread_id,omitempty" json:"message_thread_id,omitempty"`
 	Message              string `yaml:"message,omitempty" json:"message,omitempty"`
 	DisableNotifications bool   `yaml:"disable_notifications,omitempty" json:"disable_notifications,omitempty"`
 	ParseMode            string `yaml:"parse_mode,omitempty" json:"parse_mode,omitempty"`

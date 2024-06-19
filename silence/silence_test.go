@@ -15,10 +15,10 @@ package silence
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -457,6 +457,82 @@ func TestSilenceSet(t *testing.T) {
 		},
 	}
 	require.Equal(t, want, s.st, "unexpected state after silence creation")
+}
+
+func TestSilenceLimits(t *testing.T) {
+	s, err := New(Options{
+		Limits: Limits{
+			MaxSilences:        1,
+			MaxPerSilenceBytes: 2 << 11, // 4KB
+		},
+	})
+	require.NoError(t, err)
+
+	// Insert sil1 should succeed without error.
+	sil1 := &pb.Silence{
+		Matchers: []*pb.Matcher{{Name: "a", Pattern: "b"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	id1, err := s.Set(sil1)
+	require.NoError(t, err)
+	require.NotEqual(t, "", id1)
+
+	// Insert sil2 should fail because maximum number of silences
+	// has been exceeded.
+	sil2 := &pb.Silence{
+		Matchers: []*pb.Matcher{{Name: "a", Pattern: "b"}},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(5 * time.Minute),
+	}
+	id2, err := s.Set(sil2)
+	require.EqualError(t, err, "exceeded maximum number of silences: 1 (limit: 1)")
+	require.Equal(t, "", id2)
+
+	// Expire sil1 and run the GC. This should allow sil2 to be
+	// inserted.
+	require.NoError(t, s.Expire(id1))
+	n, err := s.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	id2, err = s.Set(sil2)
+	require.NoError(t, err)
+	require.NotEqual(t, "", id2)
+
+	// Should be able to update sil2 without hitting the limit.
+	_, err = s.Set(sil2)
+	require.NoError(t, err)
+
+	// Expire sil2.
+	require.NoError(t, s.Expire(id2))
+	n, err = s.GC()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	// Insert sil3 should fail because it exceeds maximum size.
+	sil3 := &pb.Silence{
+		Matchers: []*pb.Matcher{
+			{
+				Name:    strings.Repeat("a", 2<<9),
+				Pattern: strings.Repeat("b", 2<<9),
+			},
+			{
+				Name:    strings.Repeat("c", 2<<9),
+				Pattern: strings.Repeat("d", 2<<9),
+			},
+		},
+		CreatedBy: strings.Repeat("e", 2<<9),
+		Comment:   strings.Repeat("f", 2<<9),
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(5 * time.Minute),
+	}
+	id3, err := s.Set(sil3)
+	require.Error(t, err)
+	// Do not check the exact size as it can change between consecutive runs
+	// due to padding.
+	require.Contains(t, err.Error(), "silence exceeded maximum size")
+	require.Equal(t, "", id3)
 }
 
 func TestSetActiveSilence(t *testing.T) {
@@ -1594,70 +1670,6 @@ func TestStateDecodingError(t *testing.T) {
 
 	_, err = decodeState(bytes.NewReader(msg))
 	require.Equal(t, ErrInvalidState, err)
-}
-
-func benchmarkSilencesQuery(b *testing.B, numSilences int) {
-	s, err := New(Options{})
-	require.NoError(b, err)
-
-	clock := clock.NewMock()
-	s.clock = clock
-	now := clock.Now()
-
-	lset := model.LabelSet{"aaaa": "AAAA", "bbbb": "BBBB", "cccc": "CCCC"}
-
-	s.st = state{}
-	for i := 0; i < numSilences; i++ {
-		id := fmt.Sprint("ID", i)
-		// Patterns also contain the ID to bust any caches that might be used under the hood.
-		patA := "A{4}|" + id
-		patB := id // Does not match.
-		if i%10 == 0 {
-			// Every 10th time, have an actually matching pattern.
-			patB = "B(B|C)B.|" + id
-		}
-
-		s.st[id] = &pb.MeshSilence{Silence: &pb.Silence{
-			Id: id,
-			Matchers: []*pb.Matcher{
-				{Type: pb.Matcher_REGEXP, Name: "aaaa", Pattern: patA},
-				{Type: pb.Matcher_REGEXP, Name: "bbbb", Pattern: patB},
-			},
-			StartsAt:  now.Add(-time.Minute),
-			EndsAt:    now.Add(time.Hour),
-			UpdatedAt: now.Add(-time.Hour),
-		}}
-	}
-
-	// Run things once to populate the matcherCache.
-	sils, _, err := s.Query(
-		QState(types.SilenceStateActive),
-		QMatches(lset),
-	)
-	require.NoError(b, err)
-	require.Len(b, sils, numSilences/10)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		sils, _, err := s.Query(
-			QState(types.SilenceStateActive),
-			QMatches(lset),
-		)
-		require.NoError(b, err)
-		require.Len(b, sils, numSilences/10)
-	}
-}
-
-func Benchmark100SilencesQuery(b *testing.B) {
-	benchmarkSilencesQuery(b, 100)
-}
-
-func Benchmark1000SilencesQuery(b *testing.B) {
-	benchmarkSilencesQuery(b, 1000)
-}
-
-func Benchmark10000SilencesQuery(b *testing.B) {
-	benchmarkSilencesQuery(b, 10000)
 }
 
 // runtime.Gosched() does not "suspend" the current goroutine so there's no guarantee that the main goroutine won't
