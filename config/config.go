@@ -1061,7 +1061,7 @@ type Regexp struct {
 	original string
 }
 
-// NewRegexp instantiates a regexp.Regexp
+// NewRegexp instantiates a regexp.Regexp.
 func NewRegexp(s string) (*Regexp, error) {
 	regex, err := regexp.Compile("^(?:" + s + ")$")
 	if err != nil {
