@@ -61,7 +61,7 @@ func (s Secret) MarshalYAML() (interface{}, error) {
 		return string(s), nil
 	}
 	if s != "" {
-		return s, nil
+		return secretToken, nil
 	}
 	return nil, nil
 }
