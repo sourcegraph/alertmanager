@@ -1,6 +1,6 @@
 module github.com/prometheus/alertmanager
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/KimMachineGun/automemlimit v0.7.0
@@ -42,7 +42,7 @@ require (
 	github.com/xlab/treeprint v1.2.0
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/mod v0.22.0
+	golang.org/x/mod v0.25.0
 	golang.org/x/net v0.33.0
 	golang.org/x/text v0.21.0
 	golang.org/x/tools v0.28.0
